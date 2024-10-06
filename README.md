@@ -1,3 +1,5 @@
+# Modelo de Detección de Fraudes en Transacciones Financieras
+
 # INSTALACIÓN DE LOS PAQUETES Y LIBRERIAS NECESARIAS
 install.packages("DBI")
 install.packages("odbc")
