@@ -24,7 +24,7 @@ sort(unique(odbcListDrivers()[[1]]))
 con <- dbConnect(odbc(), 
                  Driver = "SQL Server", 
                  Server = "sqlprod16", 
-                 Database = "DWkPLS", 
+                 Database = "FFF", 
                  user = "wp" ,
                  Trusted_Connection = "True")
 
