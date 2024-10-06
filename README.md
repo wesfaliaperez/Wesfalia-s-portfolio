@@ -1,3 +1,4 @@
+# INSTALACIÓN DE LOS PAQUETES Y LIBRERIAS NECESARIAS
 install.packages("DBI")
 install.packages("odbc")
 install.packages("sqldf")
@@ -16,6 +17,7 @@ library(DBI)
 library(lubridate)
 library(readxl)
 
+# CONEXIÓN A LA BASE DE DATOS
 sort(unique(odbcListDrivers()[[1]]))
 con <- dbConnect(odbc(), 
                  Driver = "SQL Server", 
@@ -28,7 +30,7 @@ con
 dbListFields(con,"D_ACFMAS_")
 result <- dbSendQuery(con, "SELECT cod_Usuario_Investigador FROM D_ACFMAS_")
 
-
+# CREACIÓN DE LOS DATAS FRAME
 result
 tabla1 <- tbl(con,"D_ACFMAS_")
 tabla1
@@ -46,7 +48,7 @@ TRX <- data.frame(rawdata$Cod_MCC,rawdata$MCC)
 
 MCC  <- data.frame(unique(MCC))
 
-#cargar datos
+# CREACIÓN DE LOS DATAS FRAME
 datos <- data.frame(Fecha_trx=rawdata$Fecha_TRX, Horario = rawdata$Grupo_Horario, Fecha_cierre=rawdata$Fecha_Cierre_Caso, Hora2=rawdata$Hora_Fin_Caso, 
                     Analista = rawdata$Usuario_investigador, 
                     Resultado =as.numeric(rawdata$Tipo_Result_Caso_Inv), 
@@ -57,23 +59,18 @@ datos <- data.frame(Fecha_trx=rawdata$Fecha_TRX, Horario = rawdata$Grupo_Horario
                     ,Localidad = rawdata$Localidad_Comercio, Pais = rawdata$Pais_Origen, CodTRX= rawdata$Cod_TRX , DescripcionTrx= rawdata$Trx, step=rawdata$Hora_sin_Minutos_TRX
                     ,balance= rawdata$Saldo_Disp_Moneda_Trx, tarjetas = rawdata$Tarjeta_registro_750, Marca= rawdata$Marca_Franquicia, Autorizacion = rawdata$Autorizacion, codComercio= rawdata$Id_Comercio, Reverso = rawdata$Reverso)
 
-#separar fecha
+# AJUTAR LOS FORMATOS EN LAS FECHAS
+
 year <- substring(datos$Fecha_trx, 1,4)
-
 month <-substring(datos$Fecha_trx, 5,6)
-
 day <- substring(datos$Fecha_trx, 7,8)
 fecha_real <- paste(day,month,year,sep = "/")
-
-
 year1 <- substring(datos$Fecha_Cierre, 1,4)
-
 month1 <-substring(datos$Fecha_Cierre, 5,6)
-
 day1 <- substring(datos$Fecha_Cierre, 7,8)
 fecha_cierre <- paste(day,month,year,sep = "/")
 
-
+# CREACIÓN DE LOS DATAS FRAME
 
 datos <- data.frame(fecha_real, Horario = rawdata$Grupo_Horario,Hora1= rawdata$Hora_TRX, fecha_cierre, Hora2=rawdata$Hora_Fin_Caso,
                     Analista = rawdata$Usuario_investigador, 
@@ -85,38 +82,34 @@ datos <- data.frame(fecha_real, Horario = rawdata$Grupo_Horario,Hora1= rawdata$H
                     , Localidad = rawdata$Localidad_Comercio, Pais = rawdata$Pais_Origen, CodTRX= rawdata$Cod_TRX , DescripcionTrx= rawdata$Trx
                     ,  tarjetas = rawdata$Tarjeta_registro_750, comercio = rawdata$Nombre_Localizacion_Cio, cedula =rawdata$Id_Cliente,Marca= rawdata$Marca_Franquicia,Autorizacion = rawdata$Autorizacion, codComercio= rawdata$Id_Comercio, Reverso = rawdata$Reverso)
 
-
-
+# CREACIÓN DE LOS DATAS FRAME
 datos$fecha_real <- parse_date_time(datos$fecha_real, orders = c("dmy"))
 datos$fecha_cierre <- parse_date_time(datos$fecha_cierre, orders = c("dmy"))
 
-# sacando las buenas y las fraudes
+# DIVISIÓN DEL CONJUNTO DE DATOS EN CATEGORÍAS 
 fraudes <-datos%>%
   filter(Resultado == 1,Cod_Respuesta =="00", Monto_Moneda_Local > 0, Monto_Dollar > 0, ) %>% 
   group_by(Resultado)
-
-
 buenas <- datos %>% 
   filter(Resultado == 2, Cod_Respuesta =="00",  Monto_Moneda_Local > 0, Monto_Dollar > 0) %>% 
   group_by(Resultado) 
-
 descartada <- datos %>% 
   filter(Resultado == 3, Cod_Respuesta =="00",  Monto_Moneda_Local > 0, Monto_Dollar > 0) %>% 
   group_by(Resultado) 
-
-
 pendiente <- datos %>% 
   filter(Resultado == 4, Cod_Respuesta =="00",  Monto_Moneda_Local > 0, Monto_Dollar > 0) %>% 
   group_by(Resultado) 
-
+  
+# CREACIÓN DE LOS DATAS FRAME SEGÚN LAS CATEGORÍAS
 
 dataset1 <- full_join(fraudes,buenas)
 dataset2 <- full_join(descartada,pendiente)
 dataset1 <- full_join(dataset1,dataset2)  
-
 dataset1$Resultado <- factor(dataset1$Resultado,levels = c(1,2,3,4),labels = c("Fraude", "Buenas", "Descartada","Pendiente"))
 
+# PESO PARA CREACIÓN DEL PUNTAJE
 
+# PESO SEGÚN EL TIPO DE TARJETA VISA/MASTERCARD Y EL MONTO
 dataset1$`Monto real` <- apply(dataset1, 1, function(x) {
   if ((x['Cod_Bin'] == "12345" | x['Cod_Bin'] == "45678" | x['Cod_Bin'] == "76578") & x['Cod_Moneda_Trx'] != "214") {
     return(x['Monto_Dollar'])
@@ -124,9 +117,9 @@ dataset1$`Monto real` <- apply(dataset1, 1, function(x) {
     return(x['Monto_Moneda_Local'])
   }
 })
-
 dataset1$`Monto real`<-as.double(dataset1$`Monto real`)
 
+# PESO SEGÚN EL TIPO DE HORARIO DE LA TRANSACCIÓN
 dataset1$PesoHorario <- ifelse(dataset1$Horario == "Madrugada",10,
                          ifelse(dataset1$Horario =="Comercial PM",10,
                                 ifelse(dataset1$Horario== "Nocturno", 10,
@@ -136,7 +129,7 @@ dataset1$PesoHorario <- ifelse(dataset1$Horario == "Madrugada",10,
                                                             ifelse(dataset1$Horario =="Desayuno",3,
                                                                    ifelse(dataset1$Horario == "Laboral AM",2,0))))))))
                                                      
-
+# PESO SEGÚN LA CLASIFICACIÓN DE LA TARJETA 
 dataset1$PesoBIN <-ifelse(dataset1$Bin=="Visa Infinite",15,
                           ifelse(dataset1$Bin=="Visa Gold",10,
                                  ifelse(dataset1$Bin=="MasterCard Platinum",15,
@@ -148,8 +141,7 @@ dataset1$PesoBIN <-ifelse(dataset1$Bin=="Visa Infinite",15,
                                                                            ifelse(dataset1$Bin=="MasterCard Local",5,
                                                                                   ifelse(dataset1$Bin=="MasterCard Gold",5,
                                                                                          ifelse(dataset1$Bin=="Visa Joven",5,
-                                                                                                ifelse(dataset1$Bin=="Visa Clásica Local",5,2
-))))))))))))
+                                                                                                ifelse(dataset1$Bin=="Visa Clásica Local",5,2))))))))))))
 
 dataset1$PesoBinTRX <- ifelse(dataset1$Bin=="Visa Clásica Internacional",5,
                               ifelse(dataset1$Bin=="MasterCard Internacional",5,
@@ -166,6 +158,7 @@ dataset1$PesoBinTRX <- ifelse(dataset1$Bin=="Visa Clásica Internacional",5,
                                                                                                     )
 )))))))))))
 
+# PESO SEGÚN EL TIPO DE MONEDA DE LA TRANSACCIÓN
 dataset1$PesoMoneda <-ifelse(dataset1$Moneda=="USD dólar estadounidense",5,
 ifelse(dataset1$Moneda=="RD pesos dominicanos",5,
 ifelse(dataset1$Moneda=="EUR Euro",10,
@@ -190,17 +183,6 @@ ifelse(dataset1$Moneda=="BRL Real brasileño",10,
 ifelse(dataset1$Moneda=="BDT Taka bangladesí",10,
 ifelse(dataset1$Moneda=="PKR Rupia pakistaní",10,
 ifelse(dataset1$Moneda=="KES Chelín keniata",10,10))))))))))))))))))))))))
-
-
-dataset1$MDE <- ifelse(dataset1$Cod_modo_entrada=="01",10,
-ifelse(dataset1$Cod_modo_entrada=="02",5,
-ifelse(dataset1$Cod_modo_entrada=="05",5,
-ifelse(dataset1$Cod_modo_entrada=="07",5,
-       ifelse(dataset1$Cod_modo_entrada=="81",10,5)))))
-
-dataset1$PesoTRX <- ifelse(dataset1$CodTRX=="0",5,
-ifelse(dataset1$CodTRX=="1",3,
-ifelse(dataset1$CodTRX=="NA",1,3)))
 
 
 dataset1$Pesopais <- ifelse(dataset1$Pais=="US",3,
@@ -236,6 +218,8 @@ ifelse(dataset1$Pais=="LB",5,
 ifelse(dataset1$Pais=="JP",5,
 ifelse(dataset1$Pais=="HU",5,
 ifelse(dataset1$Pais=="PK",5,5)))))))))))))))))))))))))))))))))
+
+# PESO SEGÚN EL TIPO DE COMERCIO O ACTIVIDAD COMERCIAL DONDE SUCEDA LA TRANSACCIÓN
 
 MCC10 <-data.frame(MCC10=c("4814",	"NA",	"5411",	"5311",	"5816",	"7273",	"5310",	"6051",	"5691",	"4121",	"5964",	"5541",	"5812",	"5967",	"5817",	"4722",	"4899",	"7311",	"5999",	"6010",	"5399",	"6012",	"7372",	"7922",	"5942",	"5251"
 ),Peso=c(10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10,	10
@@ -280,12 +264,11 @@ dataset1$PesoMCC2 <- ifelse(!is.na(match(dataset1$Cod_MCC,MCC_10$MCC10)),10,
                                          ifelse(!is.na(match(dataset1$Cod_MCC,MCC_3$MCC3)),3,3))))
 
 
-
+# PESO SEGÚN LA FRECUENCIA DE LA TRANSACCIÓN
  
 velocidad <- dataset1 %>%
   group_by(cedula,tarjetas,Horario,fecha_real)%>%
   count(tarjetas) 
-
 
 combinar <- merge(dataset1, velocidad, by = c("tarjetas","fecha_real","cedula","Horario"))
 
@@ -293,12 +276,11 @@ combinar$velocidad <- ifelse(combinar$n <=1,5,
                              ifelse(combinar$n <=2,10,
                                     ifelse(combinar$n >= 3,20,0))) 
 
-
-
 combinar$score <- rowSums(combinar[,c("PesoBIN","PesoHorario","PesoBinTRX","PesoMCC",
                                    "PesoMCC2","PesoMoneda","Pesopais","PesoTRX", "velocidad", "MDE")])
+
   
-  
+ # RESULTADO FINAL 
 
 library(openxlsx)
 write.xlsx(fraudes, "data2.xlsx", sheetName = "Sheet1")
